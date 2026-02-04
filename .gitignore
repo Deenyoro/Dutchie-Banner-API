@@ -1,0 +1,28 @@
+# Environment variables (contains secrets)
+.env
+
+# Data directory (runtime scraped data)
+data/
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# WordPress plugin zip (build artifact)
+wordpress-plugin/*.zip

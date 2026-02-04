@@ -1,0 +1,22 @@
+services:
+  dutchie-scraper:
+    build: .
+    container_name: dutchie-banner-api
+    restart: unless-stopped
+    ports:
+      - "3847:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: dutchie-cloudflared
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - dutchie-scraper
