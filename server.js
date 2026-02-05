@@ -313,6 +313,11 @@ app.get('/widget', validateApiKey, (req, res) => {
         track.addEventListener('mouseup', onEnd);
         track.addEventListener('mouseleave', () => { if(isDragging) { isDragging=false; goToSlide(currentSlide); }});
 
+        // Prevent link clicks after drag
+        document.getElementById('promoCarousel').addEventListener('click', function(e) {
+          if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; }
+        }, true);
+
         startAutoplay();
       }
 

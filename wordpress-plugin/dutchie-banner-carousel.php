@@ -103,6 +103,17 @@ class DutchieBannerCarousel {
                     <tr><th>API URL</th><td><input type="text" name="<?php echo self::OPTION_NAME; ?>[api_url]" value="<?php echo esc_attr($url); ?>" class="regular-text" placeholder="https://your-api-domain.com"></td></tr>
                     <tr><th>API Key</th><td><input type="text" name="<?php echo self::OPTION_NAME; ?>[api_key]" value="<?php echo esc_attr($key); ?>" class="regular-text"></td></tr>
                 </table>
+                <hr><h2>Status</h2>
+                <?php if ($cached && is_array($cached)): ?>
+                    <p style="color:green;font-weight:bold;">&#10003; <?php echo count($cached); ?> banners cached</p>
+                    <?php if ($age_minutes !== null): ?><p>Last refresh: <?php echo $age_minutes; ?> min ago</p><?php endif; ?>
+                <?php elseif ($error): ?>
+                    <p style="color:red;">&#10007; <?php echo esc_html($error); ?></p>
+                <?php else: ?>
+                    <p style="color:orange;">No cache. Click Refresh.</p>
+                <?php endif; ?>
+                <p><button type="button" class="button button-primary" onclick="dutchieRefresh()">Refresh Now</button> <button type="button" class="button" onclick="dutchieTest()">Test</button></p>
+                <div id="result"></div>
                 <hr><h2>Custom CSS</h2>
                 <p>Add custom CSS to style the carousel or your custom template.</p>
                 <textarea name="<?php echo self::OPTION_NAME; ?>[custom_css]" rows="8" style="width:100%;max-width:800px;font-family:monospace;"><?php echo esc_textarea($custom_css); ?></textarea>
@@ -111,17 +122,6 @@ class DutchieBannerCarousel {
                 <textarea name="<?php echo self::OPTION_NAME; ?>[custom_template]" rows="10" style="width:100%;max-width:800px;font-family:monospace;"><?php echo esc_textarea($custom_template); ?></textarea>
                 <?php submit_button('Save Settings'); ?>
             </form>
-            <hr><h2>Status</h2>
-            <?php if ($cached && is_array($cached)): ?>
-                <p style="color:green;font-weight:bold;">&#10003; <?php echo count($cached); ?> banners cached</p>
-                <?php if ($age_minutes !== null): ?><p>Last refresh: <?php echo $age_minutes; ?> min ago</p><?php endif; ?>
-            <?php elseif ($error): ?>
-                <p style="color:red;">&#10007; <?php echo esc_html($error); ?></p>
-            <?php else: ?>
-                <p style="color:orange;">No cache. Click Refresh.</p>
-            <?php endif; ?>
-            <p><button class="button button-primary" onclick="dutchieRefresh()">Refresh Now</button> <button class="button" onclick="dutchieTest()">Test</button></p>
-            <div id="result"></div>
             <hr><h2>Shortcodes</h2>
             <table class="widefat" style="max-width:800px;">
                 <tr><td><code>[dutchie_banners]</code></td><td>Default carousel</td></tr>
@@ -237,7 +237,7 @@ class DutchieBannerCarousel {
         $o .= '</div><button class="dutchie-prev">&#10094;</button><button class="dutchie-next">&#10095;</button><div class="dutchie-dots">';
         for ($i = 0; $i < $n; $i++) $o .= '<span class="dutchie-dot' . ($i === 0 ? ' active' : '') . '" data-i="' . $i . '"></span>';
         $o .= '</div></div>';
-        $o .= '<script>(function(){var c=document.getElementById("' . $id . '"),t=c.querySelector(".dutchie-track"),n=' . $n . ',i=0,auto,drag=0,startX=0,dx=0,w;function go(x){i=((x%n)+n)%n;t.classList.add("animating");t.style.transform="translateX(-"+(i*100)+"%)";c.querySelectorAll(".dutchie-dot").forEach(function(d,j){d.classList.toggle("active",j===i)});ra();}function ra(){clearInterval(auto);auto=setInterval(function(){go(i+1)},5000);}c.querySelector(".dutchie-prev").onclick=function(){go(i-1)};c.querySelector(".dutchie-next").onclick=function(){go(i+1)};c.querySelectorAll(".dutchie-dot").forEach(function(d){d.onclick=function(){go(+d.dataset.i)}});function dn(e){if(e.target.closest("button"))return;drag=1;startX=e.touches?e.touches[0].clientX:e.clientX;dx=0;w=c.offsetWidth;t.classList.remove("animating");c.classList.add("dragging");clearInterval(auto)}function mv(e){if(!drag)return;var x=e.touches?e.touches[0].clientX:e.clientX;dx=x-startX;if(Math.abs(dx)>5)e.preventDefault();t.style.transform="translateX(calc(-"+(i*100)+"% + "+dx+"px))"}function up(){if(!drag)return;drag=0;c.classList.remove("dragging");var th=w*0.15;if(dx<-th&&i<n-1)go(i+1);else if(dx>th&&i>0)go(i-1);else go(i);if(Math.abs(dx)>10){var lnk=t.querySelectorAll("a");lnk.forEach(function(a){a.style.pointerEvents="none"});setTimeout(function(){lnk.forEach(function(a){a.style.pointerEvents=""})},50)}}t.onmousedown=dn;t.ontouchstart=dn;document.onmousemove=function(e){if(drag)mv(e)};t.ontouchmove=mv;document.onmouseup=up;t.ontouchend=up;t.ondragstart=function(){return false};ra()})();</script>';
+        $o .= '<script>(function(){var c=document.getElementById("' . $id . '"),t=c.querySelector(".dutchie-track"),n=' . $n . ',i=0,auto,drag=0,startX=0,dx=0,w,dragged=0;function go(x){i=((x%n)+n)%n;t.classList.add("animating");t.style.transform="translateX(-"+(i*100)+"%)";c.querySelectorAll(".dutchie-dot").forEach(function(d,j){d.classList.toggle("active",j===i)});ra();}function ra(){clearInterval(auto);auto=setInterval(function(){go(i+1)},5000);}c.querySelector(".dutchie-prev").onclick=function(){go(i-1)};c.querySelector(".dutchie-next").onclick=function(){go(i+1)};c.querySelectorAll(".dutchie-dot").forEach(function(d){d.onclick=function(){go(+d.dataset.i)}});c.addEventListener("click",function(e){if(dragged){e.preventDefault();e.stopPropagation();dragged=0}},true);function dn(e){if(e.target.closest("button"))return;drag=1;dragged=0;startX=e.touches?e.touches[0].clientX:e.clientX;dx=0;w=c.offsetWidth;t.classList.remove("animating");c.classList.add("dragging");clearInterval(auto)}function mv(e){if(!drag)return;var x=e.touches?e.touches[0].clientX:e.clientX;dx=x-startX;if(Math.abs(dx)>5){e.preventDefault();dragged=1}t.style.transform="translateX(calc(-"+(i*100)+"% + "+dx+"px))"}function up(){if(!drag)return;drag=0;c.classList.remove("dragging");var th=w*0.15;if(dx<-th&&i<n-1)go(i+1);else if(dx>th&&i>0)go(i-1);else go(i)}t.onmousedown=dn;t.ontouchstart=dn;document.onmousemove=function(e){if(drag)mv(e)};t.ontouchmove=mv;document.onmouseup=up;t.ontouchend=up;t.ondragstart=function(){return false};ra()})();</script>';
         return $o;
     }
 
