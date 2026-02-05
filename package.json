@@ -23,8 +23,8 @@
     "scrape": "node scraper.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer": "^24.0.0",
+    "express": "^5.0.0",
+    "puppeteer": "^21.6.1",
     "cors": "^2.8.5"
   },
   "engines": {
