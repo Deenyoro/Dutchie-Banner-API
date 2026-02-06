@@ -133,13 +133,15 @@ class DutchieBannerCarousel {
             <pre style="background:#1e1e1e;color:#d4d4d4;padding:10px;font-size:11px;max-height:300px;overflow:auto;"><?php echo esc_html($this->get_debug_log()); ?></pre>
         </div>
         <script>
-        function dutchieTest(){document.getElementById('result').innerHTML='Testing...';jQuery.post(ajaxurl,{action:'dutchie_test'},function(r){document.getElementById('result').innerHTML='<p style="color:'+(r.success?'green':'red')+'">'+r.data+'</p>';setTimeout(function(){location.reload();},2000);});}
-        function dutchieRefresh(){document.getElementById('result').innerHTML='Refreshing...';jQuery.post(ajaxurl,{action:'dutchie_refresh'},function(r){document.getElementById('result').innerHTML='<p style="color:'+(r.success?'green':'red')+'">'+r.data+'</p>';if(r.success)setTimeout(function(){location.reload();},1500);});}
+        var dutchieNonce='<?php echo wp_create_nonce("dutchie_admin"); ?>';
+        function dutchieTest(){document.getElementById('result').innerHTML='Testing...';jQuery.post(ajaxurl,{action:'dutchie_test',_wpnonce:dutchieNonce},function(r){document.getElementById('result').innerHTML='<p style="color:'+(r.success?'green':'red')+'">'+r.data+'</p>';setTimeout(function(){location.reload();},2000);});}
+        function dutchieRefresh(){document.getElementById('result').innerHTML='Refreshing...';jQuery.post(ajaxurl,{action:'dutchie_refresh',_wpnonce:dutchieNonce},function(r){document.getElementById('result').innerHTML='<p style="color:'+(r.success?'green':'red')+'">'+r.data+'</p>';if(r.success)setTimeout(function(){location.reload();},1500);});}
         </script>
         <?php
     }
 
     public function ajax_test() {
+        check_ajax_referer('dutchie_admin');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
         $result = $this->fetch_api();
         if (is_wp_error($result)) wp_send_json_error($result->get_error_message());
@@ -147,6 +149,7 @@ class DutchieBannerCarousel {
     }
 
     public function ajax_refresh() {
+        check_ajax_referer('dutchie_admin');
         if (!current_user_can('manage_options')) wp_send_json_error('Unauthorized');
         delete_transient(self::CACHE_KEY);
         $result = $this->fetch_api();
@@ -206,20 +209,23 @@ class DutchieBannerCarousel {
 
     public function shortcode_banners($atts) {
         $atts = shortcode_atts(array('output' => 'carousel', 'var' => 'dutchieBanners', 'class' => ''), $atts);
+        // Sanitize var name to valid JS identifier to prevent XSS
+        $var_name = preg_replace('/[^a-zA-Z0-9_]/', '', $atts['var']);
+        if (empty($var_name)) $var_name = 'dutchieBanners';
         $banners = get_transient(self::CACHE_KEY);
         if (!$banners || !is_array($banners) || empty($banners)) {
-            return $atts['output'] === 'json' ? '<script>window.' . esc_js($atts['var']) . '=[];</script>' : '<!-- No banners -->';
+            return $atts['output'] === 'json' ? '<script>window.' . $var_name . '=[];</script>' : '<!-- No banners -->';
         }
         if ($atts['output'] === 'json') {
             $d = array();
             foreach ($banners as $b) { $d[] = array('src' => $b['src'] ?? '', 'alt' => $b['alt'] ?? '', 'link' => $b['link'] ?? ''); }
-            return '<script>window.' . esc_js($atts['var']) . '=' . wp_json_encode($d) . ';</script>';
+            return '<script>window.' . $var_name . '=' . wp_json_encode($d) . ';</script>';
         }
         if ($atts['output'] === 'images') {
             $o = '<div class="dutchie-images ' . esc_attr($atts['class']) . '">';
             foreach ($banners as $b) {
                 if (!empty($b['link'])) $o .= '<a href="' . esc_url($b['link']) . '" target="_blank">';
-                $o .= '<img src="' . esc_url($b['src']) . '" alt="' . esc_attr($b['alt'] ?? '') . '">';
+                $o .= '<img src="' . esc_url($b['src'] ?? '') . '" alt="' . esc_attr($b['alt'] ?? '') . '">';
                 if (!empty($b['link'])) $o .= '</a>';
             }
             return $o . '</div>';
@@ -230,14 +236,17 @@ class DutchieBannerCarousel {
         foreach ($banners as $b) {
             $o .= '<div class="dutchie-slide">';
             if (!empty($b['link'])) $o .= '<a href="' . esc_url($b['link']) . '" target="_blank">';
-            $o .= '<img src="' . esc_url($b['src']) . '" alt="' . esc_attr($b['alt'] ?? '') . '" loading="lazy">';
+            $o .= '<img src="' . esc_url($b['src'] ?? '') . '" alt="' . esc_attr($b['alt'] ?? '') . '" loading="lazy" draggable="false">';
             if (!empty($b['link'])) $o .= '</a>';
             $o .= '</div>';
         }
-        $o .= '</div><button class="dutchie-prev">&#10094;</button><button class="dutchie-next">&#10095;</button><div class="dutchie-dots">';
+        $o .= '</div><button type="button" class="dutchie-prev" aria-label="Previous">&#10094;</button><button type="button" class="dutchie-next" aria-label="Next">&#10095;</button>';
+        $o .= '<div class="dutchie-counter" id="' . $id . 'Ctr">1 / ' . $n . '</div>';
+        $o .= '<div class="dutchie-hint" id="' . $id . 'Hint"></div>';
+        $o .= '<div class="dutchie-dots">';
         for ($i = 0; $i < $n; $i++) $o .= '<span class="dutchie-dot' . ($i === 0 ? ' active' : '') . '" data-i="' . $i . '"></span>';
         $o .= '</div></div>';
-        $o .= '<script>(function(){var c=document.getElementById("' . $id . '"),t=c.querySelector(".dutchie-track"),n=' . $n . ',i=0,auto,drag=0,startX=0,dx=0,w,dragged=0;function go(x){i=((x%n)+n)%n;t.classList.add("animating");t.style.transform="translateX(-"+(i*100)+"%)";c.querySelectorAll(".dutchie-dot").forEach(function(d,j){d.classList.toggle("active",j===i)});ra();}function ra(){clearInterval(auto);auto=setInterval(function(){go(i+1)},5000);}c.querySelector(".dutchie-prev").onclick=function(){go(i-1)};c.querySelector(".dutchie-next").onclick=function(){go(i+1)};c.querySelectorAll(".dutchie-dot").forEach(function(d){d.onclick=function(){go(+d.dataset.i)}});c.addEventListener("click",function(e){if(dragged){e.preventDefault();e.stopPropagation();dragged=0}},true);function dn(e){if(e.target.closest("button"))return;drag=1;dragged=0;startX=e.touches?e.touches[0].clientX:e.clientX;dx=0;w=c.offsetWidth;t.classList.remove("animating");c.classList.add("dragging");clearInterval(auto)}function mv(e){if(!drag)return;var x=e.touches?e.touches[0].clientX:e.clientX;dx=x-startX;if(Math.abs(dx)>5){e.preventDefault();dragged=1}t.style.transform="translateX(calc(-"+(i*100)+"% + "+dx+"px))"}function up(){if(!drag)return;drag=0;c.classList.remove("dragging");var th=w*0.15;if(dx<-th&&i<n-1)go(i+1);else if(dx>th&&i>0)go(i-1);else go(i)}t.onmousedown=dn;t.ontouchstart=dn;document.onmousemove=function(e){if(drag)mv(e)};t.ontouchmove=mv;document.onmouseup=up;t.ontouchend=up;t.ondragstart=function(){return false};ra()})();</script>';
+        $o .= '<script>(function(){var c=document.getElementById("' . $id . '"),t=c.querySelector(".dutchie-track"),n=' . $n . ',i=0,auto,drag=0,startX=0,startY=0,dx=0,w,dragged=0;var isMob="ontouchstart"in window||navigator.maxTouchPoints>0;var zTimer=null,zooming=0,zImg=null,ZDELAY=400,ZFACT=2.5,LSIZ=150;var ctr=document.getElementById("' . $id . 'Ctr");function go(x){i=((x%n)+n)%n;t.classList.add("animating");t.style.transform="translateX(-"+(i*100)+"%)";c.querySelectorAll(".dutchie-dot").forEach(function(d,j){d.classList.toggle("active",j===i)});if(ctr)ctr.textContent=(i+1)+" / "+n;ra()}function ra(){clearInterval(auto);if(n>1)auto=setInterval(function(){go(i+1)},5000)}c.querySelector(".dutchie-prev").onclick=function(){go(i-1)};c.querySelector(".dutchie-next").onclick=function(){go(i+1)};c.querySelectorAll(".dutchie-dot").forEach(function(d){d.onclick=function(){go(+d.dataset.i)}});c.addEventListener("click",function(e){if(dragged||zooming){e.preventDefault();e.stopPropagation();dragged=0}},true);function dn(e){if(e.target.closest("button"))return;if(zooming)return;drag=1;dragged=0;startX=e.touches?e.touches[0].clientX:e.clientX;startY=e.touches?e.touches[0].clientY:e.clientY;dx=0;w=c.offsetWidth;t.classList.remove("animating");c.classList.add("dragging");clearInterval(auto);if(e.touches){var td={clientX:e.touches[0].clientX,clientY:e.touches[0].clientY};clearTimeout(zTimer);zTimer=setTimeout(function(){if(drag&&!dragged)enterZoom(td)},ZDELAY)}}function mv(e){if(zooming){if(e.touches){e.preventDefault();updZoom(e.touches[0])}return}if(!drag)return;var x=e.touches?e.touches[0].clientX:e.clientX;var y=e.touches?e.touches[0].clientY:e.clientY;dx=x-startX;var dy=y-startY;if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>5){e.preventDefault();dragged=1;clearTimeout(zTimer);t.style.transform="translateX(calc(-"+(i*100)+"% + "+dx+"px))"}else if(Math.abs(dy)>10){drag=0;clearTimeout(zTimer);c.classList.remove("dragging")}}function up(){clearTimeout(zTimer);c.classList.remove("dragging");if(zooming){exitZoom();return}if(!drag)return;drag=0;var th=isMob?w*0.08:w*0.15;if(dx<-th&&i<n-1)go(i+1);else if(dx>th&&i>0)go(i-1);else go(i)}function enterZoom(touch){drag=0;zooming=1;var slides=c.querySelectorAll(".dutchie-slide");var sl=slides[i];if(!sl){exitZoom();return}zImg=sl.querySelector("img");if(!zImg){exitZoom();return}var lens=document.getElementById("' . $id . 'Lens");if(!lens){lens=document.createElement("div");lens.id="' . $id . 'Lens";lens.className="dutchie-zoom-lens";document.body.appendChild(lens)}lens.style.backgroundImage="url(\""+zImg.src+"\")";lens.style.display="block";t.classList.remove("animating");t.style.transform="translateX(-"+(i*100)+"%)";updZoom(touch)}function updZoom(touch){var lens=document.getElementById("' . $id . 'Lens");if(!lens||!zImg)return;var r=zImg.getBoundingClientRect();var rx=Math.max(0,Math.min(1,(touch.clientX-r.left)/r.width));var ry=Math.max(0,Math.min(1,(touch.clientY-r.top)/r.height));var bw=r.width*ZFACT,bh=r.height*ZFACT;lens.style.backgroundSize=bw+"px "+bh+"px";lens.style.backgroundPosition=-(rx*bw-LSIZ/2)+"px "+-(ry*bh-LSIZ/2)+"px";var lx=Math.max(5,Math.min(window.innerWidth-LSIZ-5,touch.clientX-LSIZ/2));var ly=touch.clientY-LSIZ-40;if(ly<5)ly=touch.clientY+40;if(ly+LSIZ>window.innerHeight-5)ly=window.innerHeight-LSIZ-5;lens.style.left=lx+"px";lens.style.top=ly+"px"}function exitZoom(){zooming=0;zImg=null;dragged=1;var lens=document.getElementById("' . $id . 'Lens");if(lens)lens.style.display="none";ra()}t.onmousedown=dn;t.ontouchstart=dn;document.addEventListener("mousemove",function(e){if(drag)mv(e)});t.ontouchmove=mv;document.addEventListener("mouseup",up);t.ontouchend=up;t.ondragstart=function(){return false};if(n<=1){c.querySelector(".dutchie-prev").style.display="none";c.querySelector(".dutchie-next").style.display="none";var dotsEl=c.querySelector(".dutchie-dots");if(dotsEl)dotsEl.style.display="none";if(ctr)ctr.style.display="none"}ra();if(isMob&&n>=1){setTimeout(function(){var h=document.getElementById("' . $id . 'Hint");if(h){h.textContent=n>1?"Swipe \\u2190\\u2192  \\u2022  Hold to zoom":"Hold to zoom";h.style.opacity="1";setTimeout(function(){h.style.opacity="0"},3000)}},800)}})();</script>';
         return $o;
     }
 
@@ -271,8 +280,8 @@ class DutchieBannerCarousel {
 .dutchie-carousel.dragging{cursor:grabbing}
 .dutchie-track{display:flex;will-change:transform}
 .dutchie-track.animating{transition:transform .3s ease-out}
-.dutchie-slide{min-width:100%;flex-shrink:0}
-.dutchie-slide img{width:100%;height:auto;display:block;pointer-events:none;-webkit-user-drag:none}
+.dutchie-slide{min-width:100%;flex-shrink:0;overflow:hidden}
+.dutchie-slide img{width:100%;max-width:100%;height:auto;display:block;pointer-events:none;-webkit-user-drag:none}
 .dutchie-slide a{display:block;width:100%}
 .dutchie-prev,.dutchie-next{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);color:#fff;border:none;padding:15px 10px;cursor:pointer;font-size:18px;z-index:10;transition:background .2s}
 .dutchie-prev{left:0;border-radius:0 4px 4px 0}
@@ -281,11 +290,18 @@ class DutchieBannerCarousel {
 .dutchie-dots{position:absolute;bottom:10px;left:0;right:0;text-align:center;pointer-events:none}
 .dutchie-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);margin:0 4px;cursor:pointer;pointer-events:auto;transition:all .2s}
 .dutchie-dot.active{background:#fff;transform:scale(1.2)}
-@media(max-width:768px){.dutchie-prev,.dutchie-next{padding:18px 12px;font-size:22px}.dutchie-dot{width:10px;height:10px;margin:0 5px}}
+.dutchie-counter{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:12px;padding:2px 10px;border-radius:10px;z-index:10;font-weight:500;display:none}
+.dutchie-zoom-lens{position:fixed;width:150px;height:150px;border-radius:50%;border:3px solid rgba(255,255,255,.9);box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:none;display:none;z-index:10000;overflow:hidden;background-repeat:no-repeat}
+.dutchie-hint{position:absolute;bottom:35px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:4px 12px;border-radius:12px;z-index:10;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity .5s}
+@media(max-width:768px){.dutchie-counter{display:block}.dutchie-prev,.dutchie-next{padding:10px 8px;font-size:16px;background:rgba(0,0,0,.3)}.dutchie-dots{bottom:6px}.dutchie-dot{width:8px;height:8px;margin:0 4px;background:rgba(255,255,255,.5)}.dutchie-dot.active{background:#fff;transform:scale(1.3)}}
 </style>';
         $opts = get_option(self::OPTION_NAME, array());
-        if (!empty($opts['custom_css'])) echo '<style id="dutchie-custom-css">' . $opts['custom_css'] . '</style>';
+        if (!empty($opts['custom_css'])) echo '<style id="dutchie-custom-css">' . wp_strip_all_tags($opts['custom_css']) . '</style>';
     }
 }
 
 new DutchieBannerCarousel();
+
+register_deactivation_hook(__FILE__, function() {
+    wp_clear_scheduled_hook('dutchie_cron_refresh');
+});

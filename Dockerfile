@@ -32,7 +32,11 @@ RUN npm install --omit=dev
 
 COPY . .
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && \
+    groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 3000
 

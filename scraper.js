@@ -30,8 +30,7 @@ async function scrapeBanners(retryCount = 0) {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--single-process',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process'
+        '--disable-features=TranslateUI'
       ]
     });
 
@@ -124,8 +123,10 @@ async function scrapeBanners(retryCount = 0) {
       await fs.mkdir(dataDir, { recursive: true });
     }
 
-    // Save to file
-    await fs.writeFile(DATA_FILE, JSON.stringify(result, null, 2));
+    // Save to file atomically (write temp, then rename)
+    const tmpFile = DATA_FILE + '.tmp';
+    await fs.writeFile(tmpFile, JSON.stringify(result, null, 2));
+    await fs.rename(tmpFile, DATA_FILE);
 
     console.log(`[${new Date().toISOString()}] Scraped ${banners.length} banners successfully`);
 
@@ -134,13 +135,14 @@ async function scrapeBanners(retryCount = 0) {
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Scrape failed:`, error.message);
 
-    // Retry logic
+    // Retry logic - close browser before retry to free memory
     if (retryCount < MAX_RETRIES) {
       console.log(`[${new Date().toISOString()}] Retrying in ${RETRY_DELAY/1000} seconds...`);
-      await sleep(RETRY_DELAY);
       if (browser) {
         try { await browser.close(); } catch (e) {}
+        browser = null; // Prevent double-close in finally
       }
+      await sleep(RETRY_DELAY);
       return scrapeBanners(retryCount + 1);
     }
 

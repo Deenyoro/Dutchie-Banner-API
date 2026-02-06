@@ -1,0 +1,8 @@
+.env
+.git
+.gitignore
+data/
+*.md
+wordpress-plugin/
+node_modules/
+.dockerignore

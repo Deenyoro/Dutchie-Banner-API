@@ -51,7 +51,8 @@ const validateApiKey = (req, res, next) => {
     });
   }
 
-  if (providedKey !== API_KEY) {
+  if (providedKey.length !== API_KEY.length ||
+      !crypto.timingSafeEqual(Buffer.from(providedKey), Buffer.from(API_KEY))) {
     return res.status(403).json({
       error: 'Forbidden',
       message: 'Invalid API key'
@@ -158,6 +159,9 @@ app.get('/api/banners', validateApiKey, async (req, res) => {
 app.get('/api/banners/refresh', validateApiKey, async (req, res) => {
   try {
     const data = await performScrape();
+    if (!data) {
+      return res.status(409).json({ error: 'Scrape already in progress' });
+    }
     res.json({
       ...data,
       refreshed: true
@@ -169,12 +173,14 @@ app.get('/api/banners/refresh', validateApiKey, async (req, res) => {
 
 // Serve a ready-to-use HTML carousel widget (requires API key in query param)
 app.get('/widget', validateApiKey, (req, res) => {
-  const apiKey = req.query.key || '';
+  const apiKey = (req.query.key || '').replace(/[^a-zA-Z0-9_\-]/g, '');
   res.send(`
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Promotions</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; }
@@ -187,6 +193,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       -webkit-user-select: none;
       user-select: none;
     }
+    .promo-carousel.dragging { cursor: grabbing; }
     .promo-track {
       display: flex;
       transition: transform 0.4s ease;
@@ -194,9 +201,11 @@ app.get('/widget', validateApiKey, (req, res) => {
     .promo-slide {
       min-width: 100%;
       flex-shrink: 0;
+      overflow: hidden;
     }
     .promo-slide img {
       width: 100%;
+      max-width: 100%;
       height: auto;
       display: block;
       pointer-events: none;
@@ -204,6 +213,7 @@ app.get('/widget', validateApiKey, (req, res) => {
     }
     .promo-slide a {
       display: block;
+      width: 100%;
     }
     .promo-nav {
       position: absolute;
@@ -233,7 +243,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       background: #ccc;
       margin: 0 5px;
       cursor: pointer;
-      transition: background 0.3s;
+      transition: all 0.3s;
     }
     .promo-dot.active {
       background: #004a71;
@@ -243,17 +253,84 @@ app.get('/widget', validateApiKey, (req, res) => {
       text-align: center;
       color: #666;
     }
+    .promo-counter {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 10px;
+      z-index: 10;
+      font-weight: 500;
+      display: none;
+    }
+    .promo-zoom-lens {
+      position: fixed;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      pointer-events: none;
+      display: none;
+      z-index: 10000;
+      overflow: hidden;
+      background-repeat: no-repeat;
+    }
+    .promo-hint {
+      position: absolute;
+      bottom: 35px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 12px;
+      z-index: 10;
+      pointer-events: none;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
     @media (max-width: 768px) {
-      .promo-nav { padding: 20px 15px; font-size: 22px; }
-      .promo-dot { width: 12px; height: 12px; margin: 0 6px; }
+      .promo-counter { display: block; }
+      .promo-nav {
+        padding: 10px 8px;
+        font-size: 16px;
+        background: rgba(0,0,0,0.3);
+      }
+      .promo-dots {
+        position: absolute;
+        bottom: 6px;
+        left: 0;
+        right: 0;
+        padding: 0;
+        pointer-events: none;
+      }
+      .promo-dot {
+        width: 8px;
+        height: 8px;
+        margin: 0 4px;
+        background: rgba(255,255,255,0.5);
+        pointer-events: auto;
+      }
+      .promo-dot.active {
+        background: #fff;
+        transform: scale(1.3);
+      }
     }
   </style>
 </head>
 <body>
   <div class="promo-carousel" id="promoCarousel">
     <div class="promo-track" id="promoTrack"></div>
-    <button class="promo-nav promo-prev" aria-label="Previous">&lt;</button>
-    <button class="promo-nav promo-next" aria-label="Next">&gt;</button>
+    <button type="button" class="promo-nav promo-prev" aria-label="Previous">&lt;</button>
+    <button type="button" class="promo-nav promo-next" aria-label="Next">&gt;</button>
+    <div class="promo-counter" id="promoCounter"></div>
+    <div class="promo-hint" id="promoHint"></div>
     <div class="promo-dots" id="promoDots"></div>
   </div>
 
@@ -265,7 +342,25 @@ app.get('/widget', validateApiKey, (req, res) => {
       let slideCount = 0;
       let autoplayInterval;
       let startX, startY, isDragging = false, moved = false;
-      const threshold = 50;
+      var isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      var threshold = isMobile ? 30 : 50;
+
+      // Zoom state
+      var zoomTimer = null;
+      var isZooming = false;
+      var zoomImg = null;
+      var ZOOM_DELAY = 400;
+      var ZOOM_FACTOR = 2.5;
+      var LENS_SIZE = 150;
+
+      // HTML escape helpers to prevent XSS from scraped data
+      function escAttr(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+      function safeUrl(s) {
+        if (!s) return '';
+        try { var u = new URL(s); return (u.protocol === 'http:' || u.protocol === 'https:') ? escAttr(s) : ''; } catch(e) { return ''; }
+      }
 
       async function loadBanners() {
         try {
@@ -284,10 +379,19 @@ app.get('/widget', validateApiKey, (req, res) => {
         const dots = document.getElementById('promoDots');
         slideCount = banners.length;
 
+        if (slideCount === 0) {
+          document.getElementById('promoCarousel').innerHTML =
+            '<div class="promo-error">No promotions available</div>';
+          return;
+        }
+
         track.innerHTML = banners.map(b => {
-          const img = '<img src="' + b.src + '" alt="' + (b.alt || '') + '" loading="lazy">';
+          var safeSrc = safeUrl(b.src);
+          var safeAlt = escAttr(b.alt || '');
+          var safeLink = safeUrl(b.link);
+          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false">';
           return '<div class="promo-slide">' +
-            (b.link ? '<a href="' + b.link + '" target="_blank" rel="noopener">' + img + '</a>' : img) +
+            (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener">' + img + '</a>' : img) +
             '</div>';
         }).join('');
 
@@ -295,10 +399,14 @@ app.get('/widget', validateApiKey, (req, res) => {
           '<span class="promo-dot' + (i === 0 ? ' active' : '') + '" data-index="' + i + '"></span>'
         ).join('');
 
+        // Update counter
+        var counter = document.getElementById('promoCounter');
+        if (counter && slideCount > 0) counter.textContent = '1 / ' + slideCount;
+
         // Navigation
-        document.querySelector('.promo-prev').onclick = () => goToSlide(currentSlide - 1);
-        document.querySelector('.promo-next').onclick = () => goToSlide(currentSlide + 1);
-        dots.onclick = (e) => {
+        document.querySelector('.promo-prev').onclick = function() { goToSlide(currentSlide - 1); };
+        document.querySelector('.promo-next').onclick = function() { goToSlide(currentSlide + 1); };
+        dots.onclick = function(e) {
           if (e.target.classList.contains('promo-dot')) {
             goToSlide(parseInt(e.target.dataset.index));
           }
@@ -311,30 +419,64 @@ app.get('/widget', validateApiKey, (req, res) => {
         track.addEventListener('mousedown', onStart);
         track.addEventListener('mousemove', onMove);
         track.addEventListener('mouseup', onEnd);
-        track.addEventListener('mouseleave', () => { if(isDragging) { isDragging=false; goToSlide(currentSlide); }});
+        track.addEventListener('mouseleave', function() { clearTimeout(zoomTimer); if(isDragging) { isDragging=false; goToSlide(currentSlide); }});
 
-        // Prevent link clicks after drag
+        // Prevent link clicks after drag or zoom
         document.getElementById('promoCarousel').addEventListener('click', function(e) {
-          if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; }
+          if (moved || isZooming) { e.preventDefault(); e.stopPropagation(); moved = false; }
         }, true);
 
+        // Create zoom lens for touch devices
+        if (isMobile) {
+          var lens = document.createElement('div');
+          lens.id = 'promoZoomLens';
+          lens.className = 'promo-zoom-lens';
+          document.body.appendChild(lens);
+        }
+
+        // Hide nav for single banner
+        if (slideCount <= 1) {
+          document.querySelector('.promo-prev').style.display = 'none';
+          document.querySelector('.promo-next').style.display = 'none';
+          document.getElementById('promoDots').style.display = 'none';
+          var ctrEl = document.getElementById('promoCounter');
+          if (ctrEl) ctrEl.style.display = 'none';
+        }
+
         startAutoplay();
+
+        // Show hint on mobile
+        if (isMobile && slideCount >= 1) {
+          setTimeout(function() {
+            var hint = document.getElementById('promoHint');
+            if (hint) {
+              hint.textContent = slideCount > 1 ? 'Swipe \\u2190\\u2192  \\u2022  Hold to zoom' : 'Hold to zoom';
+              hint.style.opacity = '1';
+              setTimeout(function() { hint.style.opacity = '0'; }, 3000);
+            }
+          }, 800);
+        }
       }
 
       function goToSlide(index) {
+        if (slideCount <= 0) return;
         currentSlide = ((index % slideCount) + slideCount) % slideCount;
-        const track = document.getElementById('promoTrack');
+        var track = document.getElementById('promoTrack');
         track.style.transition = 'transform 0.4s ease';
         track.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
-        document.querySelectorAll('.promo-dot').forEach((dot, i) => {
+        document.querySelectorAll('.promo-dot').forEach(function(dot, i) {
           dot.classList.toggle('active', i === currentSlide);
         });
+        var counter = document.getElementById('promoCounter');
+        if (counter) counter.textContent = (currentSlide + 1) + ' / ' + slideCount;
         resetAutoplay();
       }
 
       function resetAutoplay() {
         clearInterval(autoplayInterval);
-        autoplayInterval = setInterval(() => goToSlide(currentSlide + 1), 5000);
+        if (slideCount > 1) {
+          autoplayInterval = setInterval(function() { goToSlide(currentSlide + 1); }, 5000);
+        }
       }
 
       function startAutoplay() { resetAutoplay(); }
@@ -343,32 +485,107 @@ app.get('/widget', validateApiKey, (req, res) => {
       function getY(e) { return e.touches ? e.touches[0].clientY : e.clientY; }
 
       function onStart(e) {
+        if (isZooming) return;
         startX = getX(e); startY = getY(e);
         isDragging = true; moved = false;
         document.getElementById('promoTrack').style.transition = 'none';
+        document.getElementById('promoCarousel').classList.add('dragging');
         clearInterval(autoplayInterval);
+
+        // Start zoom detection on touch (capture touch data now since event may be recycled)
+        if (e.touches) {
+          var touchData = {clientX: e.touches[0].clientX, clientY: e.touches[0].clientY};
+          clearTimeout(zoomTimer);
+          zoomTimer = setTimeout(function() {
+            if (isDragging && !moved) {
+              enterZoomMode(touchData);
+            }
+          }, ZOOM_DELAY);
+        }
       }
 
       function onMove(e) {
+        // Handle zoom movement
+        if (isZooming) {
+          if (e.touches) { e.preventDefault(); updateZoom(e.touches[0]); }
+          return;
+        }
         if (!isDragging) return;
-        const dx = getX(e) - startX, dy = getY(e) - startY;
+        var dx = getX(e) - startX, dy = getY(e) - startY;
         if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
           e.preventDefault(); moved = true;
+          clearTimeout(zoomTimer);
           document.getElementById('promoTrack').style.transform = 'translateX(calc(-' + (currentSlide * 100) + '% + ' + dx + 'px))';
         } else if (Math.abs(dy) > 10) {
           isDragging = false;
+          clearTimeout(zoomTimer);
+          document.getElementById('promoCarousel').classList.remove('dragging');
         }
       }
 
       function onEnd(e) {
+        clearTimeout(zoomTimer);
+        document.getElementById('promoCarousel').classList.remove('dragging');
+        if (isZooming) { exitZoomMode(); return; }
         if (!isDragging) return;
         isDragging = false;
-        const dx = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) - startX;
+        var dx = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) - startX;
         if (Math.abs(dx) > threshold) {
           goToSlide(dx < 0 ? currentSlide + 1 : currentSlide - 1);
         } else {
           goToSlide(currentSlide);
         }
+      }
+
+      // === Press-and-hold zoom magnifier ===
+      function enterZoomMode(touch) {
+        isDragging = false;
+        isZooming = true;
+        var slides = document.querySelectorAll('.promo-slide');
+        var currentSlideEl = slides[currentSlide];
+        if (!currentSlideEl) { exitZoomMode(); return; }
+        zoomImg = currentSlideEl.querySelector('img');
+        if (!zoomImg) { exitZoomMode(); return; }
+        var lens = document.getElementById('promoZoomLens');
+        if (!lens) { exitZoomMode(); return; }
+        lens.style.backgroundImage = 'url("' + zoomImg.src + '")';
+        lens.style.display = 'block';
+        // Snap track to current slide
+        var track = document.getElementById('promoTrack');
+        track.style.transition = 'none';
+        track.style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
+        updateZoom(touch);
+      }
+
+      function updateZoom(touch) {
+        var lens = document.getElementById('promoZoomLens');
+        if (!lens || !zoomImg) return;
+        var rect = zoomImg.getBoundingClientRect();
+        var relX = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+        var relY = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+        var bgW = rect.width * ZOOM_FACTOR;
+        var bgH = rect.height * ZOOM_FACTOR;
+        var bgX = -(relX * bgW - LENS_SIZE / 2);
+        var bgY = -(relY * bgH - LENS_SIZE / 2);
+        lens.style.backgroundSize = bgW + 'px ' + bgH + 'px';
+        lens.style.backgroundPosition = bgX + 'px ' + bgY + 'px';
+        // Position lens above finger, keep on screen
+        var lensX = touch.clientX - LENS_SIZE / 2;
+        var lensY = touch.clientY - LENS_SIZE - 40;
+        lensX = Math.max(5, Math.min(window.innerWidth - LENS_SIZE - 5, lensX));
+        if (lensY < 5) lensY = touch.clientY + 40;
+        if (lensY + LENS_SIZE > window.innerHeight - 5) lensY = window.innerHeight - LENS_SIZE - 5;
+        lens.style.left = lensX + 'px';
+        lens.style.top = lensY + 'px';
+      }
+
+      function exitZoomMode() {
+        isZooming = false;
+        zoomImg = null;
+        moved = true; // Prevent accidental link click after zoom
+        var lens = document.getElementById('promoZoomLens');
+        if (lens) lens.style.display = 'none';
+        resetAutoplay();
       }
 
       loadBanners();
