@@ -29,7 +29,6 @@ async function scrapeBanners(retryCount = 0) {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process',
         '--disable-features=TranslateUI'
       ]
     });
@@ -158,6 +157,8 @@ async function scrapeBanners(retryCount = 0) {
   }
 }
 
+let isRefreshing = false;
+
 async function getBanners() {
   try {
     const data = await fs.readFile(DATA_FILE, 'utf8');
@@ -168,10 +169,13 @@ async function getBanners() {
     const ageMs = Date.now() - scrapedAt.getTime();
     const twoHours = 2 * 60 * 60 * 1000;
 
-    if (ageMs > twoHours) {
+    if (ageMs > twoHours && !isRefreshing) {
       console.log(`[${new Date().toISOString()}] Cache is ${Math.round(ageMs/60000)} minutes old, triggering refresh`);
       // Return stale data but trigger refresh in background
-      scrapeBanners().catch(err => console.error('Background refresh failed:', err.message));
+      isRefreshing = true;
+      scrapeBanners()
+        .catch(err => console.error('Background refresh failed:', err.message))
+        .finally(() => { isRefreshing = false; });
     }
 
     return parsed;
@@ -183,3 +187,16 @@ async function getBanners() {
 }
 
 module.exports = { scrapeBanners, getBanners };
+
+// CLI entrypoint: allow running directly with `node scraper.js`
+if (require.main === module) {
+  scrapeBanners()
+    .then(result => {
+      console.log(`Done. Scraped ${result.count} banners.`);
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('Scrape failed:', err.message);
+      process.exit(1);
+    });
+}

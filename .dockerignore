@@ -1,4 +1,5 @@
 .env
+.env*
 .git
 .gitignore
 data/
@@ -6,3 +7,5 @@ data/
 wordpress-plugin/
 node_modules/
 .dockerignore
+Dockerfile
+docker-compose*.yml

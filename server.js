@@ -283,6 +283,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       z-index: 10000;
       overflow: hidden;
       background-repeat: no-repeat;
+      background-color: #000;
     }
     .promo-hint {
       position: absolute;
@@ -532,6 +533,7 @@ app.get('/widget', validateApiKey, (req, res) => {
           isDragging = false;
           clearTimeout(zoomTimer);
           document.getElementById('promoCarousel').classList.remove('dragging');
+          resetAutoplay();
         }
       }
 
