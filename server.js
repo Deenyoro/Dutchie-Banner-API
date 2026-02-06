@@ -214,7 +214,6 @@ app.get('/widget', validateApiKey, (req, res) => {
       display: block;
       pointer-events: none;
       -webkit-user-drag: none;
-      object-fit: contain;
     }
     .promo-slide a {
       display: block;
@@ -327,6 +326,13 @@ app.get('/widget', validateApiKey, (req, res) => {
         background: #fff;
         transform: scale(1.3);
       }
+      .promo-slide {
+        aspect-ratio: 2 / 1;
+      }
+      .promo-slide img {
+        object-fit: cover !important;
+        height: 100% !important;
+      }
     }
   </style>
 </head>
@@ -395,7 +401,7 @@ app.get('/widget', validateApiKey, (req, res) => {
           var safeSrc = safeUrl(b.src);
           var safeAlt = escAttr(b.alt || '');
           var safeLink = safeUrl(b.link);
-          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;height:auto!important;display:block">';
+          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;display:block">';
           return '<div class="promo-slide">' +
             (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener" style="display:block;max-width:100%">' + img + '</a>' : img) +
             '</div>';
@@ -522,7 +528,7 @@ app.get('/widget', validateApiKey, (req, res) => {
           e.preventDefault();
           document.getElementById('promoTrack').style.transform = 'translateX(calc(-' + (currentSlide * 100) + '% + ' + dx + 'px))';
           if (Math.abs(dx) > 20) { moved = true; clearTimeout(zoomTimer); }
-        } else if (Math.abs(dy) > 10) {
+        } else if (Math.abs(dy) > 30) {
           isDragging = false;
           clearTimeout(zoomTimer);
           document.getElementById('promoCarousel').classList.remove('dragging');
@@ -547,6 +553,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       function enterZoomMode(touch) {
         isDragging = false;
         isZooming = true;
+        document.getElementById('promoCarousel').style.touchAction = 'none';
         var slides = document.querySelectorAll('.promo-slide');
         var currentSlideEl = slides[currentSlide];
         if (!currentSlideEl) { exitZoomMode(); return; }
@@ -567,10 +574,15 @@ app.get('/widget', validateApiKey, (req, res) => {
         var lens = document.getElementById('promoZoomLens');
         if (!lens || !zoomImg) return;
         var rect = zoomImg.getBoundingClientRect();
-        var relX = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
-        var relY = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
-        var bgW = rect.width * ZOOM_FACTOR;
-        var bgH = rect.height * ZOOM_FACTOR;
+        // Account for object-fit:cover - calculate actual displayed image dimensions
+        var nw = zoomImg.naturalWidth || rect.width, nh = zoomImg.naturalHeight || rect.height;
+        var sc = Math.max(rect.width / nw, rect.height / nh);
+        var dw = nw * sc, dh = nh * sc;
+        var ox = (rect.width - dw) / 2, oy = (rect.height - dh) / 2;
+        var relX = Math.max(0, Math.min(1, (touch.clientX - rect.left - ox) / dw));
+        var relY = Math.max(0, Math.min(1, (touch.clientY - rect.top - oy) / dh));
+        var bgW = dw * ZOOM_FACTOR;
+        var bgH = dh * ZOOM_FACTOR;
         var bgX = -(relX * bgW - LENS_SIZE / 2);
         var bgY = -(relY * bgH - LENS_SIZE / 2);
         lens.style.backgroundSize = bgW + 'px ' + bgH + 'px';
@@ -589,6 +601,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         isZooming = false;
         zoomImg = null;
         moved = true; // Prevent accidental link click after zoom
+        document.getElementById('promoCarousel').style.touchAction = '';
         var lens = document.getElementById('promoZoomLens');
         if (lens) lens.style.display = 'none';
         resetAutoplay();
