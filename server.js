@@ -186,12 +186,14 @@ app.get('/widget', validateApiKey, (req, res) => {
     body { font-family: system-ui, sans-serif; }
     .promo-carousel {
       width: 100%;
+      max-width: 100vw;
       overflow: hidden;
       position: relative;
       touch-action: pan-y pinch-zoom;
       cursor: grab;
       -webkit-user-select: none;
       user-select: none;
+      box-sizing: border-box;
     }
     .promo-carousel.dragging { cursor: grabbing; }
     .promo-track {
@@ -200,20 +202,24 @@ app.get('/widget', validateApiKey, (req, res) => {
     }
     .promo-slide {
       min-width: 100%;
+      max-width: 100%;
       flex-shrink: 0;
       overflow: hidden;
+      box-sizing: border-box;
     }
     .promo-slide img {
-      width: 100%;
-      max-width: 100%;
-      height: auto;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
       display: block;
       pointer-events: none;
       -webkit-user-drag: none;
+      object-fit: contain;
     }
     .promo-slide a {
       display: block;
       width: 100%;
+      max-width: 100%;
     }
     .promo-nav {
       position: absolute;
@@ -389,9 +395,9 @@ app.get('/widget', validateApiKey, (req, res) => {
           var safeSrc = safeUrl(b.src);
           var safeAlt = escAttr(b.alt || '');
           var safeLink = safeUrl(b.link);
-          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false">';
+          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;height:auto!important;display:block">';
           return '<div class="promo-slide">' +
-            (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener">' + img + '</a>' : img) +
+            (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener" style="display:block;max-width:100%">' + img + '</a>' : img) +
             '</div>';
         }).join('');
 
@@ -513,9 +519,9 @@ app.get('/widget', validateApiKey, (req, res) => {
         if (!isDragging) return;
         var dx = getX(e) - startX, dy = getY(e) - startY;
         if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
-          e.preventDefault(); moved = true;
-          clearTimeout(zoomTimer);
+          e.preventDefault();
           document.getElementById('promoTrack').style.transform = 'translateX(calc(-' + (currentSlide * 100) + '% + ' + dx + 'px))';
+          if (Math.abs(dx) > 20) { moved = true; clearTimeout(zoomTimer); }
         } else if (Math.abs(dy) > 10) {
           isDragging = false;
           clearTimeout(zoomTimer);
