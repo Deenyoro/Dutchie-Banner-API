@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "express": "^5.0.0",
-    "puppeteer": "^21.6.1",
+    "puppeteer": "^24.0.0",
     "cors": "^2.8.5"
   },
   "engines": {
