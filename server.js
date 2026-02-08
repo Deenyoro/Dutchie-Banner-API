@@ -572,6 +572,9 @@ app.get('/widget', validateApiKey, (req, res) => {
         isDragging = false;
         isZooming = true;
         document.getElementById('promoCarousel').style.touchAction = 'none';
+        // Lock page scroll while zooming — iOS ignores preventDefault on compositor-handled pan-y
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
         var slides = document.querySelectorAll('.promo-slide');
         var currentSlideEl = slides[currentSlide];
         if (!currentSlideEl) { exitZoomMode(); return; }
@@ -620,6 +623,9 @@ app.get('/widget', validateApiKey, (req, res) => {
         zoomImg = null;
         moved = true; // Prevent accidental link click after zoom
         document.getElementById('promoCarousel').style.touchAction = '';
+        // Unlock page scroll
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
         var lens = document.getElementById('promoZoomLens');
         if (lens) lens.style.display = 'none';
         resetAutoplay();
