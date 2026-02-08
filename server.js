@@ -193,6 +193,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       cursor: grab;
       -webkit-user-select: none;
       user-select: none;
+      -webkit-touch-callout: none;
       box-sizing: border-box;
     }
     .promo-carousel.dragging { cursor: grabbing; }
@@ -214,6 +215,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       display: block;
       pointer-events: none;
       -webkit-user-drag: none;
+      -webkit-touch-callout: none;
     }
     .promo-slide a {
       display: block;
@@ -356,7 +358,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       let autoplayInterval;
       let startX, startY, isDragging = false, moved = false;
       var isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      var threshold = isMobile ? 30 : 50;
+      var carouselWidth = 0;
 
       // Zoom state
       var zoomTimer = null;
@@ -404,7 +406,7 @@ app.get('/widget', validateApiKey, (req, res) => {
           var safeLink = safeUrl(b.link);
           const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;display:block">';
           return '<div class="promo-slide">' +
-            (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener" style="display:block;max-width:100%">' + img + '</a>' : img) +
+            (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener" draggable="false" style="display:block;max-width:100%">' + img + '</a>' : img) +
             '</div>';
         }).join('');
 
@@ -429,6 +431,12 @@ app.get('/widget', validateApiKey, (req, res) => {
         track.addEventListener('touchstart', onStart, {passive: true});
         track.addEventListener('touchmove', onMove, {passive: false});
         track.addEventListener('touchend', onEnd);
+        track.addEventListener('touchcancel', function() {
+          clearTimeout(zoomTimer);
+          if (isZooming) { exitZoomMode(); }
+          if (isDragging) { isDragging = false; goToSlide(currentSlide); }
+          document.getElementById('promoCarousel').classList.remove('dragging');
+        });
         track.addEventListener('mousedown', onStart);
         track.addEventListener('mousemove', onMove);
         track.addEventListener('mouseup', onEnd);
@@ -438,6 +446,11 @@ app.get('/widget', validateApiKey, (req, res) => {
         document.getElementById('promoCarousel').addEventListener('click', function(e) {
           if (moved || isZooming) { e.preventDefault(); e.stopPropagation(); moved = false; }
         }, true);
+
+        // Suppress iOS long-press context menu so hold-to-zoom works
+        document.getElementById('promoCarousel').addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+        });
 
         // Create zoom lens for touch devices
         if (isMobile) {
@@ -501,6 +514,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         if (isZooming) return;
         startX = getX(e); startY = getY(e);
         isDragging = true; moved = false;
+        carouselWidth = document.getElementById('promoCarousel').offsetWidth;
         document.getElementById('promoTrack').style.transition = 'none';
         document.getElementById('promoCarousel').classList.add('dragging');
         clearInterval(autoplayInterval);
@@ -532,6 +546,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         } else if (Math.abs(dy) > 30) {
           isDragging = false;
           clearTimeout(zoomTimer);
+          document.getElementById('promoTrack').style.transform = 'translateX(-' + (currentSlide * 100) + '%)';
           document.getElementById('promoCarousel').classList.remove('dragging');
           resetAutoplay();
         }
@@ -544,6 +559,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         if (!isDragging) return;
         isDragging = false;
         var dx = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) - startX;
+        var threshold = isMobile ? carouselWidth * 0.08 : carouselWidth * 0.15;
         if (Math.abs(dx) > threshold) {
           goToSlide(dx < 0 ? currentSlide + 1 : currentSlide - 1);
         } else {
