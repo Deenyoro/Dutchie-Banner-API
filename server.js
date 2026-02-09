@@ -478,7 +478,6 @@ app.get('/widget', validateApiKey, (req, res) => {
             if (hint) {
               hint.textContent = slideCount > 1 ? 'Swipe \\u2190\\u2192  \\u2022  Hold to zoom' : 'Hold to zoom';
               hint.style.opacity = '1';
-              setTimeout(function() { hint.style.opacity = '0'; }, 3000);
             }
           }, 800);
         }
@@ -630,6 +629,14 @@ app.get('/widget', validateApiKey, (req, res) => {
         if (lens) lens.style.display = 'none';
         resetAutoplay();
       }
+
+      // Clean up zoom state if user leaves page mid-zoom (tab switch, back button)
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden && isZooming) { exitZoomMode(); }
+      });
+      window.addEventListener('pagehide', function() {
+        if (isZooming) { exitZoomMode(); }
+      });
 
       loadBanners();
     })();
