@@ -367,6 +367,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       var ZOOM_DELAY = 400;
       var ZOOM_FACTOR = 2.5;
       var LENS_SIZE = 150;
+      var savedScrollY = 0;
 
       // HTML escape helpers to prevent XSS from scraped data
       function escAttr(s) {
@@ -567,13 +568,28 @@ app.get('/widget', validateApiKey, (req, res) => {
       }
 
       // === Press-and-hold zoom magnifier ===
+      function lockScroll() {
+        savedScrollY = window.scrollY;
+        document.body.style.position = 'fixed';
+        document.body.style.top = '-' + savedScrollY + 'px';
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.overflow = 'hidden';
+      }
+      function unlockScroll() {
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.overflow = '';
+        window.scrollTo(0, savedScrollY);
+      }
+
       function enterZoomMode(touch) {
         isDragging = false;
         isZooming = true;
         document.getElementById('promoCarousel').style.touchAction = 'none';
-        // Lock page scroll while zooming — iOS ignores preventDefault on compositor-handled pan-y
-        document.body.style.overflow = 'hidden';
-        document.documentElement.style.overflow = 'hidden';
+        lockScroll();
         var slides = document.querySelectorAll('.promo-slide');
         var currentSlideEl = slides[currentSlide];
         if (!currentSlideEl) { exitZoomMode(); return; }
@@ -622,9 +638,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         zoomImg = null;
         moved = true; // Prevent accidental link click after zoom
         document.getElementById('promoCarousel').style.touchAction = '';
-        // Unlock page scroll
-        document.body.style.overflow = '';
-        document.documentElement.style.overflow = '';
+        unlockScroll();
         var lens = document.getElementById('promoZoomLens');
         if (lens) lens.style.display = 'none';
         resetAutoplay();
