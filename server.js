@@ -308,8 +308,11 @@ app.get('/widget', validateApiKey, (req, res) => {
       opacity: 0;
       transition: opacity 0.5s;
     }
+    @media (min-width: 769px) {
+      .promo-hint { display: none !important; }
+    }
     @media (max-width: 768px) {
-      .promo-carousel { padding-bottom: 34px; }
+      .promo-carousel { padding-bottom: 50px; }
       .promo-counter { display: block; }
       .promo-nav {
         padding: 10px 8px;
@@ -317,11 +320,11 @@ app.get('/widget', validateApiKey, (req, res) => {
         background: rgba(0,0,0,0.3);
       }
       .promo-hint {
-        bottom: 14px;
+        bottom: 24px;
       }
       .promo-dots {
         position: absolute;
-        bottom: 2px;
+        bottom: 4px;
         left: 0;
         right: 0;
         padding: 0;

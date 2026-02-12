@@ -3,7 +3,7 @@
  * Plugin Name: Dutchie Banner Carousel
  * Plugin URI: https://github.com/Deenyoro/Dutchie-Banner-API
  * Description: Display promotional banners from your Dutchie menu as an auto-rotating carousel. Features: API-powered, cached for performance, auto-refresh, touch/swipe support, custom CSS, custom templates, and multiple output formats.
- * Version: 6.0.0
+ * Version: 1.0.0
  * Author: KawaConnect LLC
  * Author URI: https://kawaconnect.com
  * License: MIT
@@ -143,7 +143,9 @@ class DutchieBannerCarousel {
             </form>
             <hr><h2>Shortcodes</h2>
             <table class="widefat" style="max-width:800px;">
-                <tr><td><code>[dutchie_banners]</code></td><td>Default carousel</td></tr>
+                <tr><td><code>[dutchie_banners]</code></td><td>Default carousel (hint &amp; dots below image on mobile)</td></tr>
+                <tr><td><code>[dutchie_banners output="carousel_clean"]</code></td><td>Carousel without hint text or dots</td></tr>
+                <tr><td><code>[dutchie_banners output="carousel_overlay"]</code></td><td>Carousel with hint &amp; dots overlaying images</td></tr>
                 <tr><td><code>[dutchie_banners output="json"]</code></td><td>JSON data as <code>window.dutchieBanners</code></td></tr>
                 <tr><td><code>[dutchie_banners output="images"]</code></td><td>Simple image list</td></tr>
                 <tr style="background:#e7f5e7;"><td><code>[dutchie_custom]</code></td><td>Your custom template from above</td></tr>
@@ -214,7 +216,7 @@ class DutchieBannerCarousel {
         if (!$url || !$key) { $this->save_debug_log($log); return new WP_Error('cfg', 'API URL and Key required'); }
         $endpoint = rtrim($url, '/') . '/api/banners?key=' . urlencode($key);
         $log[] = 'Endpoint: ' . preg_replace('/key=[^&]+/', 'key=***', $endpoint);
-        $resp = wp_remote_get($endpoint, array('timeout' => 15, 'sslverify' => true, 'redirection' => 0, 'headers' => array('Accept' => 'application/json', 'User-Agent' => 'DutchieBannerCarousel/6.0.0')));
+        $resp = wp_remote_get($endpoint, array('timeout' => 15, 'sslverify' => true, 'redirection' => 0, 'headers' => array('Accept' => 'application/json', 'User-Agent' => 'DutchieBannerCarousel/1.0.0')));
         if (is_wp_error($resp)) { $log[] = 'Error: ' . $resp->get_error_message(); $this->save_debug_log($log); return $resp; }
         $code = wp_remote_retrieve_response_code($resp);
         $body = wp_remote_retrieve_body($resp);
@@ -271,7 +273,11 @@ class DutchieBannerCarousel {
         }
         $id = 'dc' . wp_rand(1000, 9999);
         $n = count($banners);
-        $o = '<div class="dutchie-carousel" id="' . $id . '" style="max-width:100%;overflow:hidden;box-sizing:border-box"><div class="dutchie-track">';
+        $mode = $atts['output'];
+        $extra_class = '';
+        if ($mode === 'carousel_clean') $extra_class = ' dutchie-clean';
+        elseif ($mode === 'carousel_overlay') $extra_class = ' dutchie-overlay';
+        $o = '<div class="dutchie-carousel' . $extra_class . '" id="' . $id . '" style="max-width:100%;overflow:hidden;box-sizing:border-box"><div class="dutchie-track">';
         foreach ($banners as $b) {
             $o .= '<div class="dutchie-slide">';
             if (!empty($b['link'])) $o .= '<a href="' . esc_url($b['link']) . '" target="_blank" rel="noopener" draggable="false" style="display:block;max-width:100%">';
@@ -335,7 +341,9 @@ class DutchieBannerCarousel {
 .dutchie-counter{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:12px;padding:2px 10px;border-radius:10px;z-index:10;font-weight:500;display:none}
 .dutchie-zoom-lens{position:fixed;width:250px;height:250px;border-radius:50%;border:3px solid rgba(255,255,255,.9);box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:none;display:none;z-index:10000;overflow:hidden;background-repeat:no-repeat;background-color:#000}
 .dutchie-hint{position:absolute;bottom:35px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:4px 12px;border-radius:12px;z-index:10;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity .5s}
-@media(max-width:768px){.dutchie-carousel{padding-bottom:34px}.dutchie-counter{display:block}.dutchie-prev,.dutchie-next{padding:10px 8px;font-size:16px;background:rgba(0,0,0,.3)}.dutchie-hint{bottom:14px}.dutchie-dots{position:absolute;bottom:2px;left:0;right:0;padding:0;pointer-events:none}.dutchie-dot{width:8px;height:8px;margin:0 4px;background:rgba(255,255,255,.5)}.dutchie-dot.active{background:#fff;transform:scale(1.3)}}
+.dutchie-carousel.dutchie-clean .dutchie-dots,.dutchie-carousel.dutchie-clean .dutchie-hint,.dutchie-carousel.dutchie-clean .dutchie-counter{display:none!important}
+@media(min-width:769px){.dutchie-hint{display:none!important}}
+@media(max-width:768px){.dutchie-carousel{padding-bottom:50px}.dutchie-carousel.dutchie-clean,.dutchie-carousel.dutchie-overlay{padding-bottom:0}.dutchie-counter{display:block}.dutchie-prev,.dutchie-next{padding:10px 8px;font-size:16px;background:rgba(0,0,0,.3)}.dutchie-hint{bottom:24px}.dutchie-carousel.dutchie-overlay .dutchie-hint{bottom:35px}.dutchie-dots{position:absolute;bottom:4px;left:0;right:0;padding:0;pointer-events:none}.dutchie-carousel.dutchie-overlay .dutchie-dots{bottom:10px}.dutchie-dot{width:8px;height:8px;margin:0 4px;background:rgba(255,255,255,.5)}.dutchie-dot.active{background:#fff;transform:scale(1.3)}}
 </style>';
         $opts = get_option(self::OPTION_NAME, array());
         if (!empty($opts['custom_css'])) {
