@@ -60,40 +60,65 @@ async function scrapeBanners(retryCount = 0) {
     // Wait for banner images to load - they use these class patterns
     await page.waitForSelector('img[class*="menu-image__MainImage"]', { timeout: 30000 });
 
-    // Give React a moment to finish rendering all slides
+    // Give React a moment to finish rendering initial slides
     await sleep(3000);
 
-    // Extract banner data
-    const banners = await page.evaluate(() => {
-      const images = document.querySelectorAll('img[class*="menu-image__MainImage"]');
-      const results = [];
-      const seenUrls = new Set();
+    // Collect banners by clicking through the carousel to reveal all slides.
+    // Dutchie only renders a few slides in the DOM at a time, so we advance
+    // the carousel and gather new images after each click.
+    const seenBaseUrls = new Set();
+    const banners = [];
 
-      images.forEach((img, index) => {
-        // Get the base image URL (strip query params for deduplication)
-        const srcUrl = img.src;
-        const baseUrl = srcUrl.split('?')[0];
-
-        // Skip duplicates (carousel often clones slides)
-        if (seenUrls.has(baseUrl)) return;
-        seenUrls.add(baseUrl);
-
-        // Get the link wrapper if exists
-        const link = img.closest('a');
-
-        results.push({
-          id: `banner-${results.length}`,
-          src: srcUrl,
-          srcset: img.srcset || null,
-          alt: img.alt || '',
-          link: link ? link.href : null,
-          width: img.naturalWidth || img.width,
-          height: img.naturalHeight || img.height
+    function collectVisibleBanners() {
+      return page.evaluate(() => {
+        const images = document.querySelectorAll('img[class*="menu-image__MainImage"]');
+        return Array.from(images).map(img => {
+          const link = img.closest('a');
+          return {
+            src: img.src,
+            srcset: img.srcset || null,
+            alt: img.alt || '',
+            link: link ? link.href : null,
+            width: img.naturalWidth || img.width,
+            height: img.naturalHeight || img.height
+          };
         });
       });
+    }
 
-      return results;
-    });
+    function addNewBanners(visible) {
+      for (const b of visible) {
+        const baseUrl = b.src.split('?')[0];
+        if (seenBaseUrls.has(baseUrl)) continue;
+        seenBaseUrls.add(baseUrl);
+        banners.push({ id: `banner-${banners.length}`, ...b });
+      }
+    }
+
+    // Gather whatever is in the DOM initially
+    addNewBanners(await collectVisibleBanners());
+
+    // Find the carousel next-arrow and click through remaining slides
+    const nextBtn = await page.$('button[class*="arrow"][class*="right"], button[class*="arrow"][class*="next"], button[class*="Next"], [class*="carousel"] button:last-of-type, [class*="banner"] button:last-of-type');
+
+    if (nextBtn) {
+      const MAX_CLICKS = 20; // safety cap
+      let stableRounds = 0;
+      for (let click = 0; click < MAX_CLICKS; click++) {
+        const before = banners.length;
+        await nextBtn.click();
+        await sleep(1000); // wait for slide transition + render
+        addNewBanners(await collectVisibleBanners());
+        if (banners.length === before) {
+          stableRounds++;
+          if (stableRounds >= 3) break; // no new banners after 3 consecutive clicks
+        } else {
+          stableRounds = 0;
+        }
+      }
+    } else {
+      console.log(`[${new Date().toISOString()}] No carousel next button found, using initially visible banners only`);
+    }
 
     // Validate we got banners
     if (!banners || banners.length === 0) {
