@@ -334,13 +334,6 @@ app.get('/widget', validateApiKey, (req, res) => {
         background: #fff;
         transform: scale(1.3);
       }
-      .promo-slide {
-        aspect-ratio: 2 / 1;
-      }
-      .promo-slide img {
-        object-fit: cover !important;
-        height: 100% !important;
-      }
     }
   </style>
 </head>
@@ -370,7 +363,7 @@ app.get('/widget', validateApiKey, (req, res) => {
       var isZooming = false;
       var zoomImg = null;
       var ZOOM_DELAY = 400;
-      var ZOOM_FACTOR = 3;
+      var ZOOM_FACTOR = 2;
       var LENS_SIZE = 250;
       var savedScrollY = 0;
 
