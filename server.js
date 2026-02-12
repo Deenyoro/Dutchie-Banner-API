@@ -309,15 +309,19 @@ app.get('/widget', validateApiKey, (req, res) => {
       transition: opacity 0.5s;
     }
     @media (max-width: 768px) {
+      .promo-carousel { padding-bottom: 34px; }
       .promo-counter { display: block; }
       .promo-nav {
         padding: 10px 8px;
         font-size: 16px;
         background: rgba(0,0,0,0.3);
       }
+      .promo-hint {
+        bottom: 14px;
+      }
       .promo-dots {
         position: absolute;
-        bottom: 6px;
+        bottom: 2px;
         left: 0;
         right: 0;
         padding: 0;

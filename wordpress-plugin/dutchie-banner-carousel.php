@@ -335,7 +335,7 @@ class DutchieBannerCarousel {
 .dutchie-counter{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:12px;padding:2px 10px;border-radius:10px;z-index:10;font-weight:500;display:none}
 .dutchie-zoom-lens{position:fixed;width:250px;height:250px;border-radius:50%;border:3px solid rgba(255,255,255,.9);box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:none;display:none;z-index:10000;overflow:hidden;background-repeat:no-repeat;background-color:#000}
 .dutchie-hint{position:absolute;bottom:35px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:4px 12px;border-radius:12px;z-index:10;pointer-events:none;white-space:nowrap;opacity:0;transition:opacity .5s}
-@media(max-width:768px){.dutchie-counter{display:block}.dutchie-prev,.dutchie-next{padding:10px 8px;font-size:16px;background:rgba(0,0,0,.3)}.dutchie-dots{bottom:6px}.dutchie-dot{width:8px;height:8px;margin:0 4px;background:rgba(255,255,255,.5)}.dutchie-dot.active{background:#fff;transform:scale(1.3)}}
+@media(max-width:768px){.dutchie-carousel{padding-bottom:34px}.dutchie-counter{display:block}.dutchie-prev,.dutchie-next{padding:10px 8px;font-size:16px;background:rgba(0,0,0,.3)}.dutchie-hint{bottom:14px}.dutchie-dots{position:absolute;bottom:2px;left:0;right:0;padding:0;pointer-events:none}.dutchie-dot{width:8px;height:8px;margin:0 4px;background:rgba(255,255,255,.5)}.dutchie-dot.active{background:#fff;transform:scale(1.3)}}
 </style>';
         $opts = get_option(self::OPTION_NAME, array());
         if (!empty($opts['custom_css'])) {
