@@ -275,8 +275,8 @@ app.get('/widget', validateApiKey, (req, res) => {
     }
     .promo-zoom-lens {
       position: fixed;
-      width: 150px;
-      height: 150px;
+      width: 250px;
+      height: 250px;
       border-radius: 50%;
       border: 3px solid rgba(255,255,255,0.9);
       box-shadow: 0 4px 20px rgba(0,0,0,0.4);
@@ -365,8 +365,8 @@ app.get('/widget', validateApiKey, (req, res) => {
       var isZooming = false;
       var zoomImg = null;
       var ZOOM_DELAY = 400;
-      var ZOOM_FACTOR = 2.5;
-      var LENS_SIZE = 150;
+      var ZOOM_FACTOR = 3;
+      var LENS_SIZE = 250;
       var savedScrollY = 0;
 
       // HTML escape helpers to prevent XSS from scraped data
