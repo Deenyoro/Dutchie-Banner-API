@@ -5,7 +5,7 @@ const { scrapeBanners, getBanners } = require('./scraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SCRAPE_INTERVAL = (parseInt(process.env.SCRAPE_INTERVAL_MINUTES) || 30) * 60 * 1000;
+const SCRAPE_INTERVAL = (parseInt(process.env.SCRAPE_INTERVAL_MINUTES) || 15) * 60 * 1000;
 const RETRY_INTERVAL = 5 * 60 * 1000; // 5 minutes retry on failure
 const MAX_RETRIES = 3;
 
@@ -217,6 +217,11 @@ app.get('/widget', validateApiKey, (req, res) => {
       -webkit-user-drag: none;
       -webkit-touch-callout: none;
     }
+    .promo-slide picture {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+    }
     .promo-slide a {
       display: block;
       width: 100%;
@@ -405,7 +410,13 @@ app.get('/widget', validateApiKey, (req, res) => {
           var safeSrc = safeUrl(b.src);
           var safeAlt = escAttr(b.alt || '');
           var safeLink = safeUrl(b.link);
-          const img = '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;display:block">';
+          var safeMobileSrc = b.mobileSrc ? safeUrl(b.mobileSrc) : '';
+          var safeMobileSrcset = b.mobileSrcset ? escAttr(b.mobileSrcset) : '';
+          var mobileSource = '';
+          if (safeMobileSrc) {
+            mobileSource = '<source media="(max-width:768px)"' + (safeMobileSrcset ? ' srcset="' + safeMobileSrcset + '"' : ' srcset="' + safeMobileSrc + '"') + '>';
+          }
+          const img = '<picture>' + mobileSource + '<img src="' + safeSrc + '" alt="' + safeAlt + '" loading="lazy" draggable="false" style="width:100%!important;max-width:100%!important;display:block"></picture>';
           return '<div class="promo-slide">' +
             (safeLink ? '<a href="' + safeLink + '" target="_blank" rel="noopener" draggable="false" style="display:block;max-width:100%">' + img + '</a>' : img) +
             '</div>';
@@ -597,7 +608,7 @@ app.get('/widget', validateApiKey, (req, res) => {
         if (!zoomImg) { exitZoomMode(); return; }
         var lens = document.getElementById('promoZoomLens');
         if (!lens) { exitZoomMode(); return; }
-        lens.style.backgroundImage = 'url("' + zoomImg.src + '")';
+        lens.style.backgroundImage = 'url("' + (zoomImg.currentSrc || zoomImg.src) + '")';
         lens.style.display = 'block';
         // Snap track to current slide
         var track = document.getElementById('promoTrack');

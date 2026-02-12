@@ -6,8 +6,101 @@ const DATA_FILE = path.join(__dirname, 'data', 'banners.json');
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 5000; // 5 seconds
 
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Scrape banner images from the carousel at a given viewport size.
+ * Clicks through all carousel slides and returns an array of banner objects.
+ */
+async function scrapeAtViewport(page, url, width, height, userAgent) {
+  await page.setViewport({ width, height });
+  await page.setUserAgent(userAgent);
+
+  await page.goto(url, {
+    waitUntil: 'networkidle2',
+    timeout: 60000
+  });
+
+  // Wait for banner images to load
+  await page.waitForSelector('img[class*="menu-image__MainImage"]', { timeout: 30000 });
+
+  // Give React a moment to finish rendering initial slides
+  await sleep(3000);
+
+  // Collect banners by clicking through the carousel to reveal all slides.
+  const seenBaseUrls = new Set();
+  const banners = [];
+
+  function collectVisibleBanners() {
+    return page.evaluate(() => {
+      const images = document.querySelectorAll('img[class*="menu-image__MainImage"]');
+      return Array.from(images).map(img => {
+        const link = img.closest('a');
+        return {
+          src: img.src,
+          srcset: img.srcset || null,
+          alt: img.alt || '',
+          link: link ? link.href : null,
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height
+        };
+      });
+    });
+  }
+
+  function addNewBanners(visible) {
+    for (const b of visible) {
+      const baseUrl = b.src.split('?')[0];
+      if (seenBaseUrls.has(baseUrl)) continue;
+      seenBaseUrls.add(baseUrl);
+      banners.push(b);
+    }
+  }
+
+  // Gather whatever is in the DOM initially
+  addNewBanners(await collectVisibleBanners());
+
+  // Click through carousel to reveal slides that aren't initially in the DOM.
+  // On mobile viewports Dutchie renders all banners at once (no carousel nav),
+  // so we check if the next button is actually visible before attempting clicks.
+  const nextBtn = await page.$('button[class*="arrow"][class*="right"], button[class*="arrow"][class*="next"], button[class*="Next"], [class*="carousel"] button:last-of-type, [class*="banner"] button:last-of-type');
+
+  let useButton = false;
+  if (nextBtn) {
+    useButton = await page.evaluate(el => {
+      const r = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    }, nextBtn);
+  }
+
+  if (useButton) {
+    const MAX_CLICKS = 20;
+    let stableRounds = 0;
+    for (let click = 0; click < MAX_CLICKS; click++) {
+      const before = banners.length;
+      try {
+        await nextBtn.click();
+      } catch {
+        break;
+      }
+      await sleep(1000);
+      addNewBanners(await collectVisibleBanners());
+      if (banners.length === before) {
+        stableRounds++;
+        if (stableRounds >= 3) break;
+      } else {
+        stableRounds = 0;
+      }
+    }
+  }
+
+  return banners;
 }
 
 async function scrapeBanners(retryCount = 0) {
@@ -35,12 +128,6 @@ async function scrapeBanners(retryCount = 0) {
 
     const page = await browser.newPage();
 
-    // Set viewport to ensure banners render properly
-    await page.setViewport({ width: 1400, height: 900 });
-
-    // Set a realistic user agent
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
     // Block unnecessary resources to speed up loading
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -52,77 +139,64 @@ async function scrapeBanners(retryCount = 0) {
       }
     });
 
-    await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
+    // Pass 1: Desktop at 1400x900
+    console.log(`[${new Date().toISOString()}] Pass 1: Desktop (1400x900)`);
+    const desktopBanners = await scrapeAtViewport(page, url, 1400, 900, DESKTOP_UA);
 
-    // Wait for banner images to load - they use these class patterns
-    await page.waitForSelector('img[class*="menu-image__MainImage"]', { timeout: 30000 });
-
-    // Give React a moment to finish rendering initial slides
-    await sleep(3000);
-
-    // Collect banners by clicking through the carousel to reveal all slides.
-    // Dutchie only renders a few slides in the DOM at a time, so we advance
-    // the carousel and gather new images after each click.
-    const seenBaseUrls = new Set();
-    const banners = [];
-
-    function collectVisibleBanners() {
-      return page.evaluate(() => {
-        const images = document.querySelectorAll('img[class*="menu-image__MainImage"]');
-        return Array.from(images).map(img => {
-          const link = img.closest('a');
-          return {
-            src: img.src,
-            srcset: img.srcset || null,
-            alt: img.alt || '',
-            link: link ? link.href : null,
-            width: img.naturalWidth || img.width,
-            height: img.naturalHeight || img.height
-          };
-        });
-      });
+    if (!desktopBanners || desktopBanners.length === 0) {
+      throw new Error('No banners found on page');
     }
 
-    function addNewBanners(visible) {
-      for (const b of visible) {
-        const baseUrl = b.src.split('?')[0];
-        if (seenBaseUrls.has(baseUrl)) continue;
-        seenBaseUrls.add(baseUrl);
-        banners.push({ id: `banner-${banners.length}`, ...b });
-      }
-    }
+    console.log(`[${new Date().toISOString()}] Desktop pass found ${desktopBanners.length} banners`);
 
-    // Gather whatever is in the DOM initially
-    addNewBanners(await collectVisibleBanners());
+    // Assign IDs to desktop banners (canonical)
+    const banners = desktopBanners.map((b, i) => ({
+      id: `banner-${i}`,
+      ...b
+    }));
 
-    // Find the carousel next-arrow and click through remaining slides
-    const nextBtn = await page.$('button[class*="arrow"][class*="right"], button[class*="arrow"][class*="next"], button[class*="Next"], [class*="carousel"] button:last-of-type, [class*="banner"] button:last-of-type');
+    // Pass 2: Mobile at 390x844
+    try {
+      console.log(`[${new Date().toISOString()}] Pass 2: Mobile (390x844)`);
+      const mobileBanners = await scrapeAtViewport(page, url, 390, 844, MOBILE_UA);
+      console.log(`[${new Date().toISOString()}] Mobile pass found ${mobileBanners.length} banners`);
 
-    if (nextBtn) {
-      const MAX_CLICKS = 20; // safety cap
-      let stableRounds = 0;
-      for (let click = 0; click < MAX_CLICKS; click++) {
-        const before = banners.length;
-        await nextBtn.click();
-        await sleep(1000); // wait for slide transition + render
-        addNewBanners(await collectVisibleBanners());
-        if (banners.length === before) {
-          stableRounds++;
-          if (stableRounds >= 3) break; // no new banners after 3 consecutive clicks
+      // Merge mobile results by index
+      for (let i = 0; i < banners.length; i++) {
+        if (i < mobileBanners.length) {
+          const mb = mobileBanners[i];
+          // Only set mobile fields if the image is actually different from desktop
+          const desktopBase = banners[i].src.split('?')[0];
+          const mobileBase = mb.src.split('?')[0];
+          if (mobileBase !== desktopBase) {
+            banners[i].mobileSrc = mb.src;
+            banners[i].mobileSrcset = mb.srcset;
+            banners[i].mobileWidth = mb.width;
+            banners[i].mobileHeight = mb.height;
+          } else {
+            // Same image — fall back to desktop (no mobile fields)
+            banners[i].mobileSrc = null;
+            banners[i].mobileSrcset = null;
+            banners[i].mobileWidth = null;
+            banners[i].mobileHeight = null;
+          }
         } else {
-          stableRounds = 0;
+          // Fewer mobile banners than desktop — fall back to desktop
+          banners[i].mobileSrc = null;
+          banners[i].mobileSrcset = null;
+          banners[i].mobileWidth = null;
+          banners[i].mobileHeight = null;
         }
       }
-    } else {
-      console.log(`[${new Date().toISOString()}] No carousel next button found, using initially visible banners only`);
-    }
-
-    // Validate we got banners
-    if (!banners || banners.length === 0) {
-      throw new Error('No banners found on page');
+    } catch (mobileErr) {
+      console.warn(`[${new Date().toISOString()}] Mobile pass failed, using desktop images only: ${mobileErr.message}`);
+      // Set null mobile fields so consumers know mobile wasn't captured
+      for (const b of banners) {
+        b.mobileSrc = null;
+        b.mobileSrcset = null;
+        b.mobileWidth = null;
+        b.mobileHeight = null;
+      }
     }
 
     // Validate image URLs are accessible (quick check)
@@ -189,12 +263,12 @@ async function getBanners() {
     const data = await fs.readFile(DATA_FILE, 'utf8');
     const parsed = JSON.parse(data);
 
-    // Check if data is stale (older than 2 hours)
+    // Check if data is stale (older than 45 minutes)
     const scrapedAt = new Date(parsed.scrapedAt);
     const ageMs = Date.now() - scrapedAt.getTime();
-    const twoHours = 2 * 60 * 60 * 1000;
+    const staleThreshold = 45 * 60 * 1000;
 
-    if (ageMs > twoHours && !isRefreshing) {
+    if (ageMs > staleThreshold && !isRefreshing) {
       console.log(`[${new Date().toISOString()}] Cache is ${Math.round(ageMs/60000)} minutes old, triggering refresh`);
       // Return stale data but trigger refresh in background
       isRefreshing = true;
